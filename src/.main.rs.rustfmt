@@ -1,0 +1,55 @@
+use std::io::Read;
+use std::io::Write;
+use std::path::PathBuf;
+
+use clap::Parser;
+use log::info;
+
+#[derive(Debug, Parser)]
+struct Opts {
+    /// The input file
+    input: PathBuf,
+    /// The output file or stdout if "-"
+    #[arg(short, long, default_value = "./out.png")]
+    output: PathBuf,
+}
+
+struct IO {
+    input: std::io::BufReader<std::fs::File>,
+    output: Box<dyn Write>,
+}
+
+fn main() -> anyhow::Result<()> {
+    let opts = Opts::parse();
+    info!("Got args: {opts:?}");
+
+    let mut io = IO { input: to_input(opts.input)?, output: to_output(opts.output)?, };
+
+    let mut image = Vec::new();
+    io.input.read_to_end(&mut image)?;
+    io.output.write(&image)?;
+
+    Ok(())
+}
+
+fn to_input(path: impl AsRef<std::path::Path>) -> anyhow::Result<std::io::BufReader<std::fs::File>> {
+    use std::io::IsTerminal;
+
+    let file = std::fs::File::open(path)?;
+    anyhow::ensure!(!file.is_terminal(), "refusing to read binary data from a terminal");
+
+    Ok(std::io::BufReader::new(file))
+}
+
+fn to_output(path: impl AsRef<std::path::Path>) -> anyhow::Result<Box<dyn Write>> {
+    use std::io::IsTerminal;
+
+    if path.as_ref().to_str() == Some("-") {
+        anyhow::ensure!(!std::io::stdout().is_terminal(), "refusing to output binary data to a terminal");
+        Ok(Box::new(std::io::stdout().lock()))
+    } else {
+        let file = std::fs::File::create(path)?;
+        anyhow::ensure!(!file.is_terminal(), "refusing to output binary data to a terminal");
+        Ok(Box::new(std::io::BufWriter::new(file)))
+    }
+}
