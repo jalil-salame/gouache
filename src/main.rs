@@ -1,8 +1,10 @@
 #![deny(clippy::perf, clippy::pedantic)]
+use std::convert::Infallible;
 use std::path::PathBuf;
 
 use clap::Parser;
 use image::io::Reader as ImageReader;
+use image::DynamicImage;
 use log::info;
 
 #[derive(Debug, Parser)]
@@ -18,8 +20,41 @@ fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     info!("Got args: {opts:?}");
 
-    let image = ImageReader::open(opts.input)?.decode()?;
-    image.save(opts.output)?;
+    // Read image as pixels between 0.0 and 1.0
+    let mut image = ImageReader::open(opts.input)?.decode()?.into_rgb32f();
+
+    apply_effect(&mut naive_grayscale, &mut image);
+
+    DynamicImage::ImageRgb32F(image)
+        .into_rgb8()
+        .save(opts.output)?;
 
     Ok(())
+}
+
+fn apply_effect(effect: &mut impl ImageEffect, image: &mut image::Rgb32FImage) {
+    effect.process(image).expect("failed to apply effect");
+}
+
+trait ImageEffect {
+    type Error: std::fmt::Debug;
+
+    fn process(&mut self, image: &mut image::Rgb32FImage) -> Result<(), Self::Error>;
+}
+
+impl<F: FnMut(&mut image::Rgb32FImage)> ImageEffect for F {
+    type Error = Infallible;
+
+    fn process(&mut self, image: &mut image::Rgb32FImage) -> Result<(), Self::Error> {
+        self(image);
+        Ok(())
+    }
+}
+
+fn naive_grayscale(image: &mut image::Rgb32FImage) {
+    for pixels in image.pixels_mut() {
+        let mean = pixels.0.iter().sum::<f32>() / 3.0;
+
+        *pixels = image::Rgb([mean, mean, mean]);
+    }
 }
