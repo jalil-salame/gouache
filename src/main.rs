@@ -32,12 +32,16 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn apply_effect(effect: &mut impl ImageEffect, image: &mut image::Rgb32FImage) {
+fn apply_effect<E>(effect: &mut E, image: &mut image::Rgb32FImage)
+where
+    E: ImageEffect,
+    E::Error: std::error::Error,
+{
     effect.process(image).expect("failed to apply effect");
 }
 
 trait ImageEffect {
-    type Error: std::fmt::Debug;
+    type Error;
 
     fn process(&mut self, image: &mut image::Rgb32FImage) -> Result<(), Self::Error>;
 }
