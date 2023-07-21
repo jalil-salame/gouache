@@ -11,6 +11,9 @@ use log::info;
 struct Opts {
     /// The input file
     input: PathBuf,
+    /// The effect to apply to the image
+    #[arg(value_enum, default_value_t)]
+    effect: Effect,
     /// The output file
     #[arg(short, long, default_value = "./out.png")]
     output: PathBuf,
@@ -20,10 +23,12 @@ fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     info!("Got args: {opts:?}");
 
+    let mut effect = opts.effect;
+
     // Read image as pixels between 0.0 and 1.0
     let mut image = ImageReader::open(opts.input)?.decode()?.into_rgb32f();
 
-    apply_effect(&mut naive_grayscale, &mut image);
+    palette::apply_effect(&mut effect, &mut image);
 
     DynamicImage::ImageRgb32F(image)
         .into_rgb8()
@@ -32,33 +37,25 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn apply_effect<E>(effect: &mut E, image: &mut image::Rgb32FImage)
-where
-    E: ImageEffect,
-    E::Error: std::error::Error,
-{
-    effect.process(image).expect("failed to apply effect");
+#[derive(Debug, Default, clap::ValueEnum, Clone, Copy)]
+enum Effect {
+    /// Don't do anything to the image
+    #[default]
+    Identity,
+    /// Naively calculate the brightness of the pixels
+    NaiveGrayscale,
+    /// Use luminence to calculate the brigtness of the pixels
+    LuminenceGrayscale,
 }
 
-trait ImageEffect {
-    type Error;
-
-    fn process(&mut self, image: &mut image::Rgb32FImage) -> Result<(), Self::Error>;
-}
-
-impl<F: FnMut(&mut image::Rgb32FImage)> ImageEffect for F {
+impl palette::ImageEffect for Effect {
     type Error = Infallible;
 
     fn process(&mut self, image: &mut image::Rgb32FImage) -> Result<(), Self::Error> {
-        self(image);
-        Ok(())
-    }
-}
-
-fn naive_grayscale(image: &mut image::Rgb32FImage) {
-    for pixels in image.pixels_mut() {
-        let mean = pixels.0.iter().sum::<f32>() / 3.0;
-
-        *pixels = image::Rgb([mean, mean, mean]);
+        match self {
+            Effect::Identity => Ok(()),
+            Effect::NaiveGrayscale => Ok(palette::naive_grayscale(image)),
+            Effect::LuminenceGrayscale => Ok(palette::luminence_grayscale(image)),
+        }
     }
 }
